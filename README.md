@@ -11,15 +11,14 @@
 | 文件 | 说明 |
 |------|------|
 | `link_XDU.bat` | 主拨号脚本（双击运行） |
-| `config.bat` | **你的账号密码配置**（.gitignore，不上传） |
-| `config.bat.example` | 配置模板（上传，供参考） |
+| `config.bat.example` | 配置模板（使用前需按要求完成配置） |
 | `setup_autostart.bat` | 开机自启管理工具 |
 | `.gitignore` | Git 忽略规则 |
 | `link_XDU.log` | 运行日志（自动生成） |
 
 ## 首次使用
 
-1. 将 `config.bat.example` **复制**一份为 `config.bat`
+1. 将 `config.bat.example` **复制**一份，更名为 `config.bat`
 2. 用记事本打开 `config.bat`，填入你的校园网账号和密码
 
 ```bat
@@ -42,7 +41,6 @@ set "PASSWORD=你的密码"
 - ✅ **错误分类** — 密码错误（691）直接退出，不浪费重试
 - ✅ **双重确认** — 拨号后二次检测连接状态，防止误判
 - ✅ **日志记录** — 每次运行结果写入 `link_XDU.log`
-- ✅ **密码安全** — 账号密码独立存储在 `config.bat`，不会被 Git 追踪
 
 ## 运行日志示例
 
