@@ -110,7 +110,8 @@ echo   已成功连接到 "%CONN_NAME%"
 echo   时间：%date% %time%
 echo ==============================
 echo [%date% %time%] 连接结束（成功） >> "%LOG_FILE%"
-pause >nul
+
+:: 连接成功后自动关闭窗口（开机自启时不会留下黑框）
 exit /b 0
 
 :failed
