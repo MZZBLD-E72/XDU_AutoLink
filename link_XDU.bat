@@ -30,14 +30,23 @@ if exist "%~dp0config.bat" (
     exit /b 1
 )
 
-:: ── 计时开始 ──
-set /a START_H=100%time:~0,2% %% 100
-set /a START_M=1%time:~3,2% - 100
-set /a START_S=1%time:~6,2% - 100
+:: ── 获取标准化时间戳（不依赖系统区域格式） ──
+for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value 2^>nul') do set "DT=%%I"
 
-:: ── 时间戳 ──
-set "LOG_DATE=%date:~0,4%/%date:~5,2%/%date:~8,2%"
-set "LOG_TIME=%time:~0,2%:%time:~3,2%:%time:~6,2%"
+if defined DT (
+    set "LOG_DATE=!DT:~0,4!/!DT:~4,2!/!DT:~6,2!"
+    set "LOG_TIME=!DT:~8,2!:!DT:~10,2!:!DT:~12,2!"
+    set /a START_H=1!DT:~8,2! - 100
+    set /a START_M=1!DT:~10,2! - 100
+    set /a START_S=1!DT:~12,2! - 100
+) else (
+    :: 后备方案（基于 date/time 变量）
+    set "LOG_DATE=%date:~0,4%/%date:~5,2%/%date:~8,2%"
+    set "LOG_TIME=%time:~0,2%:%time:~3,2%:%time:~6,2%"
+    set /a START_H=100%time:~0,2% %% 100
+    set /a START_M=1%time:~3,2% - 100
+    set /a START_S=1%time:~6,2% - 100
+)
 
 :: ── 结果变量 ──
 set "RESULT_DETAIL="
@@ -105,9 +114,15 @@ goto retry
 :: ── 写入日志（最新在最前） ──
 :write_log
 :: 计算耗时
-set /a END_H=100%time:~0,2% %% 100
-set /a END_M=1%time:~3,2% - 100
-set /a END_S=1%time:~6,2% - 100
+if defined DT (
+    set /a END_H=1!DT:~8,2! - 100
+    set /a END_M=1!DT:~10,2! - 100
+    set /a END_S=1!DT:~12,2! - 100
+) else (
+    set /a END_H=100%time:~0,2% %% 100
+    set /a END_M=1%time:~3,2% - 100
+    set /a END_S=1%time:~6,2% - 100
+)
 set /a ELAPSED= (END_H*3600+END_M*60+END_S) - (START_H*3600+START_M*60+START_S)
 if !ELAPSED! lss 0 set /a ELAPSED+=86400
 
@@ -127,17 +142,17 @@ move /y "%TEMP_LOG%" "%LOG_FILE%" >nul
 
 :: ── 清理 7 天前的日志 ──
 set "PS_SCRIPT=%TEMP%\link_XDU_clean.ps1"
-echo $f = '%LOG_FILE%;' > "%PS_SCRIPT%"
-echo $cutoff = (Get-Date^).AddDays(-7^); >> "%PS_SCRIPT%"
+echo $f = '%LOG_FILE%'; > "%PS_SCRIPT%"
+echo $cutoff = (Get-Date).AddDays(-7); >> "%PS_SCRIPT%"
 echo $lines = Get-Content $f -Encoding Default; >> "%PS_SCRIPT%"
-echo $out = @^(); $keep = $true; >> "%PS_SCRIPT%"
-echo foreach ($line in $lines^) { >> "%PS_SCRIPT%"
-echo   if ($line -match '^={5,}'^) { $keep = $false } >> "%PS_SCRIPT%"
-echo   if ($line -match '^\[\d{4}/\d{2}/\d{2}'^) { >> "%PS_SCRIPT%"
+echo $out = @(); $keep = $true; >> "%PS_SCRIPT%"
+echo foreach ($line in $lines) { >> "%PS_SCRIPT%"
+echo   if ($line -match '^={5,}') { $keep = $false } >> "%PS_SCRIPT%"
+echo   if ($line -match '^\[\d{4}/\d{2}/\d{2}') { >> "%PS_SCRIPT%"
 echo     $d = $matches[0] -replace '\[','' -replace '\].*',''; >> "%PS_SCRIPT%"
-echo     try { $keep = [DateTime]::ParseExact($d,'yyyy/MM/dd',$null^) -ge $cutoff } catch { $keep = $true } >> "%PS_SCRIPT%"
+echo     try { $keep = [DateTime]::ParseExact($d,'yyyy/MM/dd',$null) -ge $cutoff } catch { $keep = $true } >> "%PS_SCRIPT%"
 echo   } >> "%PS_SCRIPT%"
-echo   if ($keep^) { $out += $line } >> "%PS_SCRIPT%"
+echo   if ($keep) { $out += $line } >> "%PS_SCRIPT%"
 echo } >> "%PS_SCRIPT%"
 echo Set-Content $f -Value $out -Encoding Default >> "%PS_SCRIPT%"
 
