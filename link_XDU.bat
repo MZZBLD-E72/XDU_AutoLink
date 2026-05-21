@@ -2,124 +2,155 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-:: ========================================
-:: XDU 自动连网脚本（增强版 v3）
-:: ========================================
+:: ============================================================
+:: XDU 自动连网脚本（增强版 v4）
+:: 用法：
+::   link_XDU.bat            — 手动双击运行
+::   link_XDU.bat startup    — 开机时由计划任务触发
+::   link_XDU.bat wake       — 睡眠唤醒时由计划任务触发
+:: ============================================================
 
 set "CONN_NAME=XDU"
-set "MAX_RETRIES=10"
+set "MAX_RETRIES=5"
 set "RETRY_DELAY=3"
 set "LOG_FILE=%~dp0link_XDU.log"
 
-:: ===== 加载账号密码（从独立的 config.bat 读取，不硬编码） =====
+:: ── 参数判断：触发来源 ──
+set "TRIGGER_DESC=手动触发"
+if /i "%~1"=="startup"  set "TRIGGER_DESC=系统开机触发"
+if /i "%~1"=="wake"     set "TRIGGER_DESC=系统唤醒触发"
+
+:: ── 加载 config.bat ──
 if exist "%~dp0config.bat" (
     call "%~dp0config.bat"
 ) else (
-    echo ==============================
-    echo   [错误] 找不到 config.bat！
-    echo   请将 config.bat.example 复制为 config.bat
-    echo   并在其中填入你的账号和密码
-    echo ==============================
+    echo [错误] 找不到 config.bat！
+    echo   请将 config.bat.example 复制为 config.bat 并填入账号密码
     pause >nul
     exit /b 1
 )
 
-echo ==============================
-echo   XDU 自动连网脚本
-echo   开始时间：%date% %time%
-echo ==============================
+:: ── 计时开始 ──
+set /a START_H=100%time:~0,2% %% 100
+set /a START_M=1%time:~3,2% - 100
+set /a START_S=1%time:~6,2% - 100
 
-echo [%date% %time%] === 开始连网 === >> "%LOG_FILE%"
+:: ── 时间戳 ──
+set "LOG_DATE=%date:~0,4%/%date:~5,2%/%date:~8,2%"
+set "LOG_TIME=%time:~0,2%:%time:~3,2%:%time:~6,2%"
 
-:: ===== 第一步：检查当前连接状态 =====
-echo 正在检查当前网络连接状态...
+:: ── 结果变量 ──
+set "RESULT_DETAIL="
+set "RESULT_STATUS="
+set "NEED_PAUSE=0"
+
+:: ── 检查连接状态 ──
 rasdial "%CONN_NAME%" 2>&1 | findstr /i "已连接" >nul
 if !errorlevel! equ 0 (
-    echo [信息] "%CONN_NAME%" 已经处于连接状态，跳过拨号
-    echo [%date% %time%] 已处于连接状态，跳过拨号 >> "%LOG_FILE%"
-    goto :success
+    set "RESULT_DETAIL=无需拨号，已处于连接状态"
+    set "RESULT_STATUS=已连接"
+    goto :write_log
 )
 
-echo [信息] 当前未连接 "%CONN_NAME%"，准备拨号...
-
-set RETRY_COUNT=0
+set "RETRY_COUNT=0"
 
 :retry
 set /a RETRY_COUNT+=1
 
-:: 先确保断开旧连接（避免残留）
+:: 断开旧连接
 rasdial "%CONN_NAME%" /d >nul 2>&1
 
-echo [%date% %time%] 第 !RETRY_COUNT! 次尝试连接...
 rasdial "%CONN_NAME%" %ACCOUNT% %PASSWORD%
 set "LAST_ERROR=!errorlevel!"
 
-:: 错误码说明（常见的）：
-::   0   - 成功
-::   691 - 用户名或密码错误（无需重试）
-::   633 - 调制解调器正在使用中
-::   623 - 电话簿项不存在
-::   720 - PPP 协议协商失败
-::   732 - PPP 协议错误
-
 if !LAST_ERROR! equ 0 (
-    echo 连接成功！
-    echo [%date% %time%] 连接成功（错误码=0） >> "%LOG_FILE%"
-    goto :success
+    set "RESULT_DETAIL=第 !RETRY_COUNT! 次拨号成功"
+    set "RESULT_STATUS=成功"
+    goto :write_log
 )
 
 if !LAST_ERROR! equ 691 (
-    echo [失败] 错误码 691：用户名或密码错误，请检查 config.bat 中的配置
-    echo [%date% %time%] 错误691：用户名或密码错误，跳过重试 >> "%LOG_FILE%"
-    goto :failed
+    set "RESULT_DETAIL=错误691（用户名或密码错误），停止重试"
+    set "RESULT_STATUS=失败"
+    set "NEED_PAUSE=1"
+    goto :write_log
 )
 
 if !LAST_ERROR! equ 623 (
-    echo [失败] 错误码 623：找不到连接项 "%CONN_NAME%"
-    echo [%date% %time%] 错误623：找不到连接项 "%CONN_NAME%" >> "%LOG_FILE%"
-    goto :failed
+    set "RESULT_DETAIL=错误623（找不到连接项 %CONN_NAME%），停止重试"
+    set "RESULT_STATUS=失败"
+    set "NEED_PAUSE=1"
+    goto :write_log
 )
 
-if !LAST_ERROR! equ 633 (
-    echo [提示] 错误码 633：调制解调器正在使用中，等待释放...
-    echo [%date% %time%] 错误633：调制解调器正在使用中 >> "%LOG_FILE%"
-)
-
-:: 有时 rasdial 返回非0但实际已连接，做二次确认
+:: 二次确认（拨号返回非0但实际可能已连上）
 rasdial "%CONN_NAME%" 2>&1 | findstr /i "已连接" >nul
 if !errorlevel! equ 0 (
-    echo [信息] 虽然返回错误码 !LAST_ERROR!，但检测到已连接，视为成功
-    echo [%date% %time%] 返回错误码!LAST_ERROR!但检测到已连接，视为成功 >> "%LOG_FILE%"
-    goto :success
+    set "RESULT_DETAIL=错误码!LAST_ERROR!，但检测到已连接"
+    set "RESULT_STATUS=成功"
+    goto :write_log
 )
 
-:: 达到最大重试次数则退出
+:: 达到最大重试次数
 if !RETRY_COUNT! geq !MAX_RETRIES! (
-    echo [失败] 已重试 !MAX_RETRIES! 次，仍无法连接（最近错误码=!LAST_ERROR!），放弃
-    echo [%date% %time%] 达到最大重试次数，放弃连接（最近错误码=!LAST_ERROR!） >> "%LOG_FILE%"
-    goto :failed
+    set "RESULT_DETAIL=重试 !MAX_RETRIES! 次均失败（最近错误码=!LAST_ERROR!），放弃"
+    set "RESULT_STATUS=失败"
+    set "NEED_PAUSE=1"
+    goto :write_log
 )
 
-echo 连接失败（错误码 !LAST_ERROR!），!RETRY_DELAY! 秒后重试...
 timeout /t !RETRY_DELAY! /nobreak >nul
 goto retry
 
-:success
-echo ==============================
-echo   已成功连接到 "%CONN_NAME%"
-echo   时间：%date% %time%
-echo ==============================
-echo [%date% %time%] 连接结束（成功） >> "%LOG_FILE%"
+:: ── 写入日志（最新在最前） ──
+:write_log
+:: 计算耗时
+set /a END_H=100%time:~0,2% %% 100
+set /a END_M=1%time:~3,2% - 100
+set /a END_S=1%time:~6,2% - 100
+set /a ELAPSED= (END_H*3600+END_M*60+END_S) - (START_H*3600+START_M*60+START_S)
+if !ELAPSED! lss 0 set /a ELAPSED+=86400
 
-:: 连接成功后自动关闭窗口（开机自启时不会留下黑框）
+:: 写新日志（最新在最前）：先建临时文件，新内容 + 旧内容
+set "TEMP_LOG=%TEMP%\link_XDU_tmp.log"
+
+(
+    echo ============================================================
+    echo  [%LOG_DATE% %LOG_TIME%] ^> !TRIGGER_DESC!
+    echo   检查状态 ... !RESULT_DETAIL!
+    echo   └── [!RESULT_STATUS!] 耗时 !ELAPSED! 秒
+    echo.
+    type "%LOG_FILE%" 2>nul
+) > "%TEMP_LOG%"
+
+move /y "%TEMP_LOG%" "%LOG_FILE%" >nul
+
+:: ── 清理 7 天前的日志 ──
+set "PS_SCRIPT=%TEMP%\link_XDU_clean.ps1"
+echo $f = '%LOG_FILE%;' > "%PS_SCRIPT%"
+echo $cutoff = (Get-Date^).AddDays(-7^); >> "%PS_SCRIPT%"
+echo $lines = Get-Content $f -Encoding Default; >> "%PS_SCRIPT%"
+echo $out = @^(); $keep = $true; >> "%PS_SCRIPT%"
+echo foreach ($line in $lines^) { >> "%PS_SCRIPT%"
+echo   if ($line -match '^={5,}'^) { $keep = $false } >> "%PS_SCRIPT%"
+echo   if ($line -match '^\[\d{4}/\d{2}/\d{2}'^) { >> "%PS_SCRIPT%"
+echo     $d = $matches[0] -replace '\[','' -replace '\].*',''; >> "%PS_SCRIPT%"
+echo     try { $keep = [DateTime]::ParseExact($d,'yyyy/MM/dd',$null^) -ge $cutoff } catch { $keep = $true } >> "%PS_SCRIPT%"
+echo   } >> "%PS_SCRIPT%"
+echo   if ($keep^) { $out += $line } >> "%PS_SCRIPT%"
+echo } >> "%PS_SCRIPT%"
+echo Set-Content $f -Value $out -Encoding Default >> "%PS_SCRIPT%"
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" >nul 2>&1
+del "%PS_SCRIPT%" >nul 2>&1
+
+:: ── 退出 ──
+if !NEED_PAUSE! equ 1 (
+    echo ==============================
+    echo   连接失败
+    echo   日志已保存至：%LOG_FILE%
+    echo ==============================
+    pause >nul
+    exit /b 1
+)
 exit /b 0
-
-:failed
-echo ==============================
-echo   连接 "%CONN_NAME%" 失败
-echo   请检查网络或配置后重试
-echo   日志已保存至：%LOG_FILE%
-echo ==============================
-echo [%date% %time%] 连接结束（失败） >> "%LOG_FILE%"
-pause >nul
-exit /b 1
