@@ -158,6 +158,18 @@ echo Set-Content $f -Value $out -Encoding Default >> "%PS_SCRIPT%"
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%" >nul 2>&1
 del "%PS_SCRIPT%" >nul 2>&1
+ 
+:: ── 联网成功后自动发送 IP 地址 ──
+if not "!RESULT_STATUS!"=="失败" (
+    if exist "C:\Users\TZR\Desktop\IPsend\IPsend.bat" (
+        echo.
+        echo [信息] 正在发送 IP 地址...
+        start "" /MIN "C:\Users\TZR\Desktop\IPsend\IPsend.bat"
+        echo [信息] IP 地址发送中...
+        echo [%LOG_DATE% %LOG_TIME%] 已触发 IP 地址发送 >> "%LOG_FILE%"
+    )
+)
+
 
 :: ── 退出 ──
 if !NEED_PAUSE! equ 1 (
