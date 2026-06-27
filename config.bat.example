@@ -6,3 +6,5 @@
 :: ========================================
 set "ACCOUNT=your_account_here"
 set "PASSWORD=your_password_here"
+:: 联网成功后是否自动发送 IP 地址（1=启用, 0=停用）
+set "SEND_IP=1"
